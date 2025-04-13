@@ -1,0 +1,23 @@
+[project]
+name = "gutenberg-pipeline"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "tnvan",email = "nhat.vtvn@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy (>=2.0.40,<3.0.0)",
+    "psycopg2-binary (>=2.9.10,<3.0.0)",
+    "requests (>=2.32.3,<3.0.0)",
+    "tqdm (>=4.67.1,<5.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "gutenberg_pipeline", from = "src"}]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
