@@ -3,7 +3,7 @@ name = "gutenberg-pipeline"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "tnvan",email = "nhat.vtvn@gmail.com"}
+    {name = "tnvan"}
 ]
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,7 +11,9 @@ dependencies = [
     "sqlalchemy (>=2.0.40,<3.0.0)",
     "psycopg2-binary (>=2.9.10,<3.0.0)",
     "requests (>=2.32.3,<3.0.0)",
-    "tqdm (>=4.67.1,<5.0.0)"
+    "tqdm (>=4.67.1,<5.0.0)",
+    "alembic (>=1.15.2,<2.0.0)",
+    "load-dotenv (>=0.1.0,<0.2.0)"
 ]
 
 [tool.poetry]

@@ -4,6 +4,7 @@ import time
 import logging
 import zipfile
 from pathlib import Path
+import xml.etree.ElementTree as ElementTree
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -12,7 +13,15 @@ from tqdm import tqdm
 
 GUTENBERG_FEEDS_URL="https://www.gutenberg.org/cache/epub/feeds"
 RDF_FILES="rdf-files.tar.zip"
-RDF_FILE_PATH = Path("../../data/rdf_files.tar.zip")
+DATA_FOLDER = Path("../../data")
+RDF_FILE_PATH = DATA_FOLDER/RDF_FILES
+
+NAMESPACES = {
+    'pg': 'http://www.gutenberg.org/2009/pgterms/',
+    'dc': 'http://purl.org/dc/terms/',
+    'dcam': 'http://purl.org/dc/dcam/',
+    'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
+}
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,7 +47,7 @@ def download_rdf_file(url, filename) -> None:
             downloaded_size = os.path.getsize(filename) if os.path.exists(filename) else 0
 
             if downloaded_size >= total_size:
-                print(f"Download complete: {filename}")
+                logger.info(f"Download complete: {filename}")
                 break
 
             headers = {"Range": f"bytes={downloaded_size}-"}
@@ -52,13 +61,19 @@ def download_rdf_file(url, filename) -> None:
                             pbar.update(len(chunk))
 
         except requests.exceptions.RequestException as e:
-            print(f"Request error: {e}. Retrying in 5 seconds...")
+            logger.error(f"Request error: {e}. Retrying in 5 seconds...")
             time.sleep(5)
 
 
-def extract_rdf_file(rdf_file: Path) -> None:
-    extract_to = rdf_file.parent/"rdf_files"
-    with zipfile.ZipFile(rdf_file, "r") as zip_ref:
+def extract_tar_zip_file(zip_file: Path, directory_name: str) -> None:
+    """
+    Extract a .tar.zip file to a specified directory.
+    :param directory_name:
+    :param zip_file:
+    :return:
+    """
+    extract_to = zip_file.parent/directory_name
+    with zipfile.ZipFile(zip_file, "r") as zip_ref:
         zip_ref.extractall(extract_to)
 
     for file in os.listdir(extract_to):
@@ -68,18 +83,75 @@ def extract_rdf_file(rdf_file: Path) -> None:
             with tarfile.open(tar_path, 'r') as tar_ref:
                 tar_ref.extractall(extract_to)
 
-            print(f"Extracted: {tar_path}")
+            logger.info(f"Extracted: {tar_path}")
             break
     else:
-        print("No .tar file found inside the .zip")
+        logger.info("No .tar file found inside the .zip")
 
 
 def load_rdf():
     """
     Load RDF data from the Gutenberg Project.
     """
+    rdf_folder = Path("../../data/rdf_files")
+    if not RDF_FILE_PATH.exists():
+        logger.info("Downloading RDF file...")
+        download_rdf_file(f"{GUTENBERG_FEEDS_URL}/{RDF_FILES}", RDF_FILE_PATH)
+    if not rdf_folder.exists():
+        logger.info("Extract RDF file...")
+        extract_tar_zip_file(RDF_FILE_PATH, "rdf_files")
 
-    logger.info("Downloading RDF file...")
-    # download_rdf_file(f"{GUTENBERG_FEEDS_URL}/{RDF_FILES}", RDF_FILE_PATH)
-    logger.info("Extract RDF file...")
-    extract_rdf_file(RDF_FILE_PATH)
+
+def parse_xml_file() -> ElementTree.ElementTree | None:
+    """
+    Parse an XML file and return the ElementTree object.
+    :param file_path: Path to the XML file.
+    :return: ElementTree object.
+    """
+    try:
+        tree = ElementTree.parse(DATA_FOLDER / "rdf_files/cache/epub/1/pg1.rdf")
+        print(extract_metadata(tree))
+        return tree
+    except ElementTree.ParseError as e:
+        logger.error(f"Error parsing XML file {file_path}: {e}")
+        return None
+
+
+def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
+    """
+    Extract metadata from the XML tree.
+    :param xml_tree:
+    :return:
+    """
+    root = xml_tree.getroot()
+    def get_single_value(tag):
+        el = root.find(tag, NAMESPACES)
+        return el.text if el is not None else None
+
+    def get_multiples_values(tag):
+        el = root.findall(tag, NAMESPACES)
+        return [e.text for e in el] if el else None
+
+    def get_book_link():
+        for file_elem in root.findall(".//pg:file", NAMESPACES):
+            format_value = file_elem.find(".//dc:format/rdf:Description/rdf:value", NAMESPACES)
+            if format_value is not None and format_value.text.startswith("text/plain"):
+                return file_elem.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
+
+    def get_id():
+        el = root.find('.//pg:ebook', NAMESPACES)
+        if el is not None:
+            return el.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
+        return None
+
+    return {
+        "gutenberg_id": get_id(),
+        "type": get_single_value('.//dc:type/rdf:value'),
+        "author_name": get_single_value('.//dc:creator/pg:agent/pg:name'),
+        "author_birthdate": int(get_single_value('.//dc:creator/pg:agent/pg:birthdate')),
+        "author_deathdate": int(get_single_value('.//dc:creator/pg:agent/pg:deathdate')),
+        "title": get_single_value('.//dc:title'),
+        "summary": get_single_value('.//pg:marc520'),
+        "language": get_multiples_values('.//dc:language/rdf:Description/rdf:value'),
+        "book_link": get_book_link(),
+    }
