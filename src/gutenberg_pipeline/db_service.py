@@ -1,8 +1,7 @@
 import logging
 from typing import Type, Optional, Tuple
-
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from gutenberg_pipeline.database import Session
 from gutenberg_pipeline.models import Author, Book, BookTranslation
 
 logging.basicConfig(level=logging.INFO)
@@ -13,10 +12,10 @@ def _handle_db_error(message: str) -> None:
     raise ValueError(message)
 
 
-# --- Author CRUD ---
-def create_author(db: Session, name: str, **kwargs) -> Optional[Author]:
+def create_author(db: Session, author_id: int, name: str,
+                  birth_year: Optional[int], death_year: Optional[int]) -> Optional[Author]:
     try:
-        author = Author(name=name, **kwargs)
+        author = Author(id=author_id, name=name, birth_year=birth_year, death_year=death_year)
         db.add(author)
         db.commit()
         db.refresh(author)
@@ -33,6 +32,10 @@ def get_author(db: Session, name: str) -> Optional[Type[Author]]:
     except SQLAlchemyError as e:
         db.rollback()
         _handle_db_error(f"Error retrieving author: {e}")
+
+
+def is_author_exists(db: Session, name: str) -> bool:
+    return get_author(db, name) is not None
 
 
 def delete_author(db: Session, author_id: int) -> None:
