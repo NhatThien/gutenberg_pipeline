@@ -109,7 +109,7 @@ def parse_xml_file() -> ElementTree.ElementTree | None:
     :return: ElementTree object.
     """
     try:
-        tree = ElementTree.parse(DATA_FOLDER / "rdf_files/cache/epub/1/pg1.rdf")
+        tree = ElementTree.parse(DATA_FOLDER / "rdf_files/cache/epub/16565/pg16565.rdf")
         print(extract_metadata(tree))
         return tree
     except ElementTree.ParseError as e:
@@ -124,34 +124,70 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
     :return:
     """
     root = xml_tree.getroot()
-    def get_single_value(tag):
+
+    def extract_id(text: str | None) -> str | None:
+        return text.split("/")[-1] if text else None
+
+    def get_text(tag: str) -> str | None:
         el = root.find(tag, NAMESPACES)
         return el.text if el is not None else None
 
-    def get_multiples_values(tag):
+    def get_text_list(tag: str) -> list[str] | None:
         el = root.findall(tag, NAMESPACES)
         return [e.text for e in el] if el else None
 
-    def get_book_link():
+    def get_book_link() -> str | None:
         for file_elem in root.findall(".//pg:file", NAMESPACES):
             format_value = file_elem.find(".//dc:format/rdf:Description/rdf:value", NAMESPACES)
             if format_value is not None and format_value.text.startswith("text/plain"):
                 return file_elem.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
 
-    def get_id():
-        el = root.find('.//pg:ebook', NAMESPACES)
-        if el is not None:
-            return el.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
         return None
 
+    def get_book_id():
+        el = root.find('.//pg:ebook', NAMESPACES)
+        if el is not None:
+            return extract_id(el.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about"))
+
+        return None
+
+    def parse_int(text: str | None) -> int | None:
+        try:
+            return int(text) if text else None
+        except (ValueError, TypeError):
+            return None
+
+    def get_nested_text(el: ElementTree.Element, tag: str) -> str | None:
+        child = el.find(tag, NAMESPACES)
+        return child.text if child is not None else None
+
+    def get_authors() -> list[dict] | None:
+        authors = root.findall('.//dc:creator', NAMESPACES)
+        if not authors:
+            return None
+        res = []
+        for author in authors:
+            author_id = extract_id(author.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about"))
+            author_name = get_nested_text(author, './/pg:name')
+            author_birthdate =  parse_int(get_nested_text(author, './/pg:birthdate'))
+            author_deathdate =  parse_int(get_nested_text(author,'.//pg:deathdate'))
+            res.append(
+                {
+                    "id": author_id,
+                    "name": author_name,
+                    "birthdate": author_birthdate,
+                    "deathdate": author_deathdate
+                }
+            )
+
+        return res if res else None
+
     return {
-        "gutenberg_id": get_id(),
-        "type": get_single_value('.//dc:type/rdf:value'),
-        "author_name": get_single_value('.//dc:creator/pg:agent/pg:name'),
-        "author_birthdate": int(get_single_value('.//dc:creator/pg:agent/pg:birthdate')),
-        "author_deathdate": int(get_single_value('.//dc:creator/pg:agent/pg:deathdate')),
-        "title": get_single_value('.//dc:title'),
-        "summary": get_single_value('.//pg:marc520'),
-        "language": get_multiples_values('.//dc:language/rdf:Description/rdf:value'),
+        "gutenberg_id": get_book_id(),
+        "type": get_text('.//dc:type/rdf:value'),
+        "authors": get_authors(),
+        "title": get_text('.//dc:title'),
+        "summary": get_text('.//pg:marc520'),
+        "language": get_text_list('.//dc:language/rdf:Description/rdf:value'),
         "book_link": get_book_link(),
     }
