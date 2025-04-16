@@ -5,6 +5,7 @@ import logging
 import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ElementTree
+from typing import Optional
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -12,9 +13,11 @@ from urllib3.util import Retry
 from tqdm import tqdm
 
 GUTENBERG_FEEDS_URL="https://www.gutenberg.org/cache/epub/feeds"
-RDF_FILES="rdf-files.tar.zip"
 DATA_FOLDER = Path("../../data")
-RDF_FILE_PATH = DATA_FOLDER/RDF_FILES
+RDF_ZIP_FILE_NAME= "rdf-files.tar.zip"
+RDF_ZIP_FILE_PATH = DATA_FOLDER/RDF_ZIP_FILE_NAME
+RDF_UNZIP_FOLDER_NAME = "rdf_files"
+RDF_UNZIP_FOLDER_PATH = DATA_FOLDER/RDF_UNZIP_FOLDER_NAME
 
 NAMESPACES = {
     'pg': 'http://www.gutenberg.org/2009/pgterms/',
@@ -26,7 +29,7 @@ NAMESPACES = {
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def download_rdf_file(url, filename) -> None:
+def download_rdf_file(url: str, filename: Path) -> None:
     """
     Download a file from a URL with support for resuming downloads.
     """
@@ -89,28 +92,26 @@ def extract_tar_zip_file(zip_file: Path, directory_name: str) -> None:
         logger.info("No .tar file found inside the .zip")
 
 
-def load_rdf():
+def load_rdf() -> None:
     """
     Load RDF data from the Gutenberg Project.
     """
-    rdf_folder = Path("../../data/rdf_files")
-    if not RDF_FILE_PATH.exists():
+    if not RDF_ZIP_FILE_PATH.exists():
         logger.info("Downloading RDF file...")
-        download_rdf_file(f"{GUTENBERG_FEEDS_URL}/{RDF_FILES}", RDF_FILE_PATH)
-    if not rdf_folder.exists():
+        download_rdf_file(f"{GUTENBERG_FEEDS_URL}/{RDF_ZIP_FILE_NAME}", RDF_ZIP_FILE_PATH)
+    if not RDF_UNZIP_FOLDER_PATH.exists():
         logger.info("Extract RDF file...")
-        extract_tar_zip_file(RDF_FILE_PATH, "rdf_files")
+        extract_tar_zip_file(RDF_ZIP_FILE_PATH, RDF_UNZIP_FOLDER_NAME)
 
 
-def parse_xml_file() -> ElementTree.ElementTree | None:
+def parse_xml_file(file_path: Path) -> Optional[ElementTree.ElementTree]:
     """
     Parse an XML file and return the ElementTree object.
     :param file_path: Path to the XML file.
     :return: ElementTree object.
     """
     try:
-        tree = ElementTree.parse(DATA_FOLDER / "rdf_files/cache/epub/16565/pg16565.rdf")
-        print(extract_metadata(tree))
+        tree = ElementTree.parse(file_path)
         return tree
     except ElementTree.ParseError as e:
         logger.error(f"Error parsing XML file {file_path}: {e}")
@@ -125,18 +126,23 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
     """
     root = xml_tree.getroot()
 
-    def extract_id(text: str | None) -> str | None:
-        return text.split("/")[-1] if text else None
+    def extract_id(text: str) -> Optional[str]:
+        try:
+            print(text)
+            return text.split("/")[-1] if text else None
+        except ValueError as e:
+            logger.error("Error extracting ID: {e}")
+            return None
 
-    def get_text(tag: str) -> str | None:
+    def get_text(tag: str) -> Optional[str]:
         el = root.find(tag, NAMESPACES)
         return el.text if el is not None else None
 
-    def get_text_list(tag: str) -> list[str] | None:
+    def get_text_list(tag: str) -> Optional[list[str]]:
         el = root.findall(tag, NAMESPACES)
         return [e.text for e in el] if el else None
 
-    def get_book_link() -> str | None:
+    def get_book_link() -> Optional[str]:
         for file_elem in root.findall(".//pg:file", NAMESPACES):
             format_value = file_elem.find(".//dc:format/rdf:Description/rdf:value", NAMESPACES)
             if format_value is not None and format_value.text.startswith("text/plain"):
@@ -144,39 +150,40 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
 
         return None
 
-    def get_book_id():
+    def get_book_id() -> Optional[int]:
         el = root.find('.//pg:ebook', NAMESPACES)
         if el is not None:
-            return extract_id(el.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about"))
+            return parse_int(extract_id(el.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")))
 
         return None
 
-    def parse_int(text: str | None) -> int | None:
+    def parse_int(text: Optional[str]) -> Optional[int]:
         try:
             return int(text) if text else None
         except (ValueError, TypeError):
             return None
 
-    def get_nested_text(el: ElementTree.Element, tag: str) -> str | None:
+    def get_nested_text(el: ElementTree.Element, tag: str) -> Optional[str]:
         child = el.find(tag, NAMESPACES)
         return child.text if child is not None else None
 
-    def get_authors() -> list[dict] | None:
+    def get_authors() -> Optional[list[dict]]:
         authors = root.findall('.//dc:creator', NAMESPACES)
         if not authors:
             return None
         res = []
         for author in authors:
-            author_id = extract_id(author.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about"))
+            agent = author.find('.//pg:agent', NAMESPACES)
+            author_id = extract_id(agent.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about"))
             author_name = get_nested_text(author, './/pg:name')
-            author_birthdate =  parse_int(get_nested_text(author, './/pg:birthdate'))
-            author_deathdate =  parse_int(get_nested_text(author,'.//pg:deathdate'))
+            author_birth_year =  parse_int(get_nested_text(author, './/pg:birthdate'))
+            author_death_year =  parse_int(get_nested_text(author,'.//pg:deathdate'))
             res.append(
                 {
                     "id": author_id,
                     "name": author_name,
-                    "birthdate": author_birthdate,
-                    "deathdate": author_deathdate
+                    "birth_year": author_birth_year,
+                    "death_year": author_death_year
                 }
             )
 
