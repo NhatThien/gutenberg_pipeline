@@ -11,7 +11,7 @@ book_author_table = Table(
 class Author(Base):
     __tablename__ = 'authors'
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     birth_year: Mapped[int] = mapped_column(Integer, nullable=True)
     death_year: Mapped[int] = mapped_column(Integer, nullable=True)
 
