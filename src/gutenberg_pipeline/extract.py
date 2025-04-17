@@ -128,7 +128,6 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
 
     def extract_id(text: str) -> Optional[str]:
         try:
-            print(text)
             return text.split("/")[-1] if text else None
         except ValueError as e:
             logger.error("Error extracting ID: {e}")
@@ -149,6 +148,10 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
                 return file_elem.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
 
         return None
+
+    def get_book_html() -> Optional[str]:
+        #TODO get book html
+        pass
 
     def get_book_id() -> Optional[int]:
         el = root.find('.//pg:ebook', NAMESPACES)
@@ -189,12 +192,44 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
 
         return res if res else None
 
+    def get_bookshelves() -> Optional[list[str]]:
+        bookshelves = get_text_list('.//pg:bookshelf/rdf:Description/rdf:value')
+        print(bookshelves)
+        if not bookshelves:
+            return None
+        res = []
+        for bookshelf in bookshelves:
+            if bookshelf.split(":")[0] != "Browsing":
+                res.append(bookshelf)
+
+        return res if res else None
+
     return {
         "gutenberg_id": get_book_id(),
-        "type": get_text('.//dc:type/rdf:value'),
+        "categories": get_bookshelves(),
+        #TODO handle date format api
+        "release_date": get_text('.//dc:issued'),
+        "book_link": get_book_link(),
         "authors": get_authors(),
         "title": get_text('.//dc:title'),
         "summary": get_text('.//pg:marc520'),
-        "language": get_text_list('.//dc:language/rdf:Description/rdf:value'),
-        "book_link": get_book_link(),
+        "language": get_text_list('.//dc:language/rdf:Description/rdf:value')
+        # TODO get_book_html -> crawl -> content
     }
+
+
+def parse_book(raw_text: str) -> dict:
+    """
+    Parses the raw text of a Gutenberg book.
+
+    Args:
+        raw_text (str): Raw book text.
+
+    Returns:
+        dict: {
+            "title": str,
+            "author": str,
+            "content": str
+        }
+    """
+    pass
