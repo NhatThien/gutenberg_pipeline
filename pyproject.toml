@@ -13,11 +13,24 @@ dependencies = [
     "requests (>=2.32.3,<3.0.0)",
     "tqdm (>=4.67.1,<5.0.0)",
     "alembic (>=1.15.2,<2.0.0)",
-    "load-dotenv (>=0.1.0,<0.2.0)"
+    "load-dotenv (>=0.1.0,<0.2.0)",
+    "pytest (>=8.3.5,<9.0.0)",
+    "beautifulsoup4 (>=4.13.4,<5.0.0)"
 ]
 
 [tool.poetry]
 packages = [{include = "gutenberg_pipeline", from = "src"}]
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.11.6"
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+fix = true
+exclude = ["alembic/"]
 
 
 [build-system]

@@ -1,23 +1,7 @@
-import os
-import tarfile
-import time
 import logging
-import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ElementTree
 from typing import Optional
-
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
-from tqdm import tqdm
-
-GUTENBERG_FEEDS_URL="https://www.gutenberg.org/cache/epub/feeds"
-DATA_FOLDER = Path("../../data")
-RDF_ZIP_FILE_NAME= "rdf-files.tar.zip"
-RDF_ZIP_FILE_PATH = DATA_FOLDER/RDF_ZIP_FILE_NAME
-RDF_UNZIP_FOLDER_NAME = "rdf_files"
-RDF_UNZIP_FOLDER_PATH = DATA_FOLDER/RDF_UNZIP_FOLDER_NAME
 
 NAMESPACES = {
     'pg': 'http://www.gutenberg.org/2009/pgterms/',
@@ -26,83 +10,7 @@ NAMESPACES = {
     'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
 }
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def download_rdf_file(url: str, filename: Path) -> None:
-    """
-    Download a file from a URL with support for resuming downloads.
-    """
-    total_size = int(requests.head(url).headers.get("Content-Length", 0))
-
-    session = requests.Session()
-    retry_strategy = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["GET"],
-        raise_on_status=False,
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("https://", adapter)
-    while True:
-        try:
-            downloaded_size = os.path.getsize(filename) if os.path.exists(filename) else 0
-
-            if downloaded_size >= total_size:
-                logger.info(f"Download complete: {filename}")
-                break
-
-            headers = {"Range": f"bytes={downloaded_size}-"}
-            with session.get(url, headers=headers, stream=True, timeout=(10, 60)) as r:
-                r.raise_for_status()
-                mode = 'ab' if downloaded_size else 'wb'
-                with open(filename, mode) as f:
-                    with tqdm(total=total_size, initial=downloaded_size, unit='B', unit_scale=True, desc=url) as pbar:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            f.write(chunk)
-                            pbar.update(len(chunk))
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
-
-
-def extract_tar_zip_file(zip_file: Path, directory_name: str) -> None:
-    """
-    Extract a .tar.zip file to a specified directory.
-    :param directory_name:
-    :param zip_file:
-    :return:
-    """
-    extract_to = zip_file.parent/directory_name
-    with zipfile.ZipFile(zip_file, "r") as zip_ref:
-        zip_ref.extractall(extract_to)
-
-    for file in os.listdir(extract_to):
-        if file.endswith('.tar'):
-            tar_path = os.path.join(extract_to, file)
-
-            with tarfile.open(tar_path, 'r') as tar_ref:
-                tar_ref.extractall(extract_to)
-
-            logger.info(f"Extracted: {tar_path}")
-            break
-    else:
-        logger.info("No .tar file found inside the .zip")
-
-
-def load_rdf() -> None:
-    """
-    Load RDF data from the Gutenberg Project.
-    """
-    if not RDF_ZIP_FILE_PATH.exists():
-        logger.info("Downloading RDF file...")
-        download_rdf_file(f"{GUTENBERG_FEEDS_URL}/{RDF_ZIP_FILE_NAME}", RDF_ZIP_FILE_PATH)
-    if not RDF_UNZIP_FOLDER_PATH.exists():
-        logger.info("Extract RDF file...")
-        extract_tar_zip_file(RDF_ZIP_FILE_PATH, RDF_UNZIP_FOLDER_NAME)
-
 
 def parse_xml_file(file_path: Path) -> Optional[ElementTree.ElementTree]:
     """
@@ -117,7 +25,6 @@ def parse_xml_file(file_path: Path) -> Optional[ElementTree.ElementTree]:
         logger.error(f"Error parsing XML file {file_path}: {e}")
         return None
 
-
 def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
     """
     Extract metadata from the XML tree.
@@ -129,7 +36,7 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
     def extract_id(text: str) -> Optional[str]:
         try:
             return text.split("/")[-1] if text else None
-        except ValueError as e:
+        except ValueError:
             logger.error("Error extracting ID: {e}")
             return None
 
@@ -148,10 +55,6 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
                 return file_elem.attrib.get("{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about")
 
         return None
-
-    def get_book_html() -> Optional[str]:
-        #TODO get book html
-        pass
 
     def get_book_id() -> Optional[int]:
         el = root.find('.//pg:ebook', NAMESPACES)
@@ -194,7 +97,6 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
 
     def get_bookshelves() -> Optional[list[str]]:
         bookshelves = get_text_list('.//pg:bookshelf/rdf:Description/rdf:value')
-        print(bookshelves)
         if not bookshelves:
             return None
         res = []
@@ -207,29 +109,10 @@ def extract_metadata(xml_tree: ElementTree.ElementTree) -> dict:
     return {
         "gutenberg_id": get_book_id(),
         "categories": get_bookshelves(),
-        #TODO handle date format api
         "release_date": get_text('.//dc:issued'),
         "book_link": get_book_link(),
         "authors": get_authors(),
         "title": get_text('.//dc:title'),
         "summary": get_text('.//pg:marc520'),
-        "language": get_text_list('.//dc:language/rdf:Description/rdf:value')
-        # TODO get_book_html -> crawl -> content
+        "language": get_text('.//dc:language/rdf:Description/rdf:value')
     }
-
-
-def parse_book(raw_text: str) -> dict:
-    """
-    Parses the raw text of a Gutenberg book.
-
-    Args:
-        raw_text (str): Raw book text.
-
-    Returns:
-        dict: {
-            "title": str,
-            "author": str,
-            "content": str
-        }
-    """
-    pass
