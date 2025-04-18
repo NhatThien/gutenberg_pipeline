@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 from gutenberg_pipeline.database import Base
-from gutenberg_pipeline.db_service import create_author, get_author
+from gutenberg_pipeline.repositories import create_author, get_author
 
 
 @pytest.fixture
