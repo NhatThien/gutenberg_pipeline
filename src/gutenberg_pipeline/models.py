@@ -39,9 +39,9 @@ class Book(Base):
     release_date: Mapped[str] = mapped_column(Date)
     gutenberg_link: Mapped[str] = mapped_column(String(255), nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    summary: Mapped[str] = mapped_column(Text)
-    content: Mapped[str] = mapped_column(Text)
-    language: Mapped[str] = mapped_column(String(10))
+    summary: Mapped[str] = mapped_column(Text, nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=True)
+    language: Mapped[str] = mapped_column(String(10), nullable=True)
 
     authors = relationship("Author", secondary="book_author", back_populates="books")
     categories = relationship("Category", secondary=book_category_table, back_populates="books")
