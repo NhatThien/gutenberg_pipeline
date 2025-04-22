@@ -27,11 +27,7 @@ def create_author(db: Session, author_id: int, name: str,
 
 
 def get_author(db: Session, name: str) -> Optional[Author]:
-    try:
-        return db.query(Author).filter(Author.name == name).first()
-    except SQLAlchemyError as e:
-        db.rollback()
-        _handle_db_error(f"Error retrieving author: {e}")
+    return db.query(Author).filter(Author.name == name).first()
 
 
 def get_or_create_authors(db: Session, authors_data: list[dict]) -> Optional[list[Author]]:
@@ -50,7 +46,8 @@ def get_or_create_authors(db: Session, authors_data: list[dict]) -> Optional[lis
         if not author:
             author = create_author(db, author_info["id"], author_info["name"],
                                    author_info.get("birth_year"), author_info.get("death_year"))
-        author_objects.append(author)
+        if author:
+            author_objects.append(author)
 
     return author_objects or None
 
@@ -81,11 +78,7 @@ def create_category(db: Session, category_name: str) -> Optional[Category]:
 
 
 def get_category(db: Session, name: str) -> Optional[Category]:
-    try:
-        return db.query(Category).filter(Category.name == name).first()
-    except SQLAlchemyError as e:
-        db.rollback()
-        _handle_db_error(f"Error retrieving category: {e}")
+    return db.query(Category).filter(Category.name == name).first()
 
 
 def get_or_create_categories(db: Session, categories_data: list[str]) -> Optional[list[Category]]:
@@ -103,7 +96,8 @@ def get_or_create_categories(db: Session, categories_data: list[str]) -> Optiona
         category = get_category(db, category_name)
         if not category:
             category = create_category(db, category_name)
-        category_objects.append(category)
+        if category:
+            category_objects.append(category)
 
     return category_objects or None
 
@@ -157,9 +151,13 @@ def update_book(db: Session, book_id: int, **updates) -> Optional[Book]:
             setattr(book, field_name, new_value)
             updated_fields.append(field_name)
     if updated_fields:
-        db.commit()
-        db.refresh(book)
-        logger.info(f"Book {book_id} updated successfully. Fields changed: {', '.join(updated_fields)}")
+        try:
+            db.commit()
+            db.refresh(book)
+            logger.info(f"Book {book_id} updated successfully. Fields changed: {', '.join(updated_fields)}")
+        except SQLAlchemyError as e:
+            db.rollback()
+            _handle_db_error(f"Error updating book: {e}")
     else:
         logger.info(f"No fields updated for Book {book_id}.")
 
@@ -188,40 +186,36 @@ def update_or_create_book(db: Session, book_id: int, title: str,
     :param title: Book title.
     :return: Book object.
     """
-    authors = get_or_create_authors(db, authors_data) if authors_data else None
-    categories = get_or_create_categories(db, categories_data) if categories_data else None
+    try:
+        authors = get_or_create_authors(db, authors_data) if authors_data else None
+        categories = get_or_create_categories(db, categories_data) if categories_data else None
 
-    book = get_book_by_id(db, book_id)
-    if book:
-        book = update_book(db, book_id=book_id, title=title,
-                       release_date=release_date, gutenberg_link=book_link,
-                       language=language, summary=summary,
-                       authors=authors, categories=categories, content=content)
-
-        return book, False
-    else:
-        book = create_book(db, book_id=book_id, title=title,
+        book = get_book_by_id(db, book_id)
+        if book:
+            book = update_book(db, book_id=book_id, title=title,
                            release_date=release_date, gutenberg_link=book_link,
                            language=language, summary=summary,
                            authors=authors, categories=categories, content=content)
 
-        return book, True
+            return book, False
+        else:
+            book = create_book(db, book_id=book_id, title=title,
+                               release_date=release_date, gutenberg_link=book_link,
+                               language=language, summary=summary,
+                               authors=authors, categories=categories, content=content)
+
+            return book, True
+    except SQLAlchemyError as e:
+        db.rollback()
+        _handle_db_error(f"Error updating or creating book: {e}")
 
 
 def get_book_by_title(db: Session, title: str) -> Optional[Book]:
-    try:
-        return db.query(Book).filter(Book.title == title).first()
-    except SQLAlchemyError as e:
-        db.rollback()
-        _handle_db_error(f"Error getting book by title: {e}")
+    return db.query(Book).filter(Book.title == title).first()
 
 
 def get_book_by_id(db: Session, book_id: int) -> Optional[Book]:
-    try:
-        return db.query(Book).filter(Book.id == book_id).first()
-    except SQLAlchemyError as e:
-        db.rollback()
-        _handle_db_error(f"Error getting book by id: {e}")
+    return db.query(Book).filter(Book.id == book_id).first()
 
 
 def delete_book(db: Session, book_id: int) -> None:
