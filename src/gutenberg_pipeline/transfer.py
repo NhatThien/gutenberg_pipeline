@@ -1,6 +1,9 @@
 import logging
+from asyncio import Semaphore
 from pathlib import Path
 from typing import Optional
+
+from aiohttp import ClientSession
 
 from gutenberg_pipeline import Book
 from gutenberg_pipeline.database import Session
@@ -24,10 +27,13 @@ def fetch_metadata_from_rdf_file(rdf_file_path: Path) -> Optional[dict]:
     return metadata
 
 
-def store_book_to_db(db: Session, file_path: Path) -> Optional[Book]:
+async def store_book_to_db(semaphore: Semaphore, http_session: ClientSession,
+                           db_session: Session, file_path: Path) -> Optional[Book]:
     """
     Store book in the database.
-    :param db: Database session.
+    :param semaphore:
+    :param http_session:
+    :param db_session:
     :param file_path:
     """
     metadata = fetch_metadata_from_rdf_file(file_path)
@@ -35,8 +41,8 @@ def store_book_to_db(db: Session, file_path: Path) -> Optional[Book]:
         logger.warning("No metadata found.")
         return None
 
-    book_text = parse_book(metadata)
-    book, created = update_or_create_book(db, book_id=metadata["gutenberg_id"], title=metadata["title"],
+    book_text = await parse_book(semaphore, http_session, metadata)
+    book, created = update_or_create_book(db_session, book_id=metadata["gutenberg_id"], title=metadata["title"],
                               release_date=metadata.get("release_date"), book_link=metadata.get("book_link"),
                               language=metadata.get("language"), summary=metadata.get("summary"),
                               authors_data=metadata.get("authors"), categories_data=metadata.get("categories"),

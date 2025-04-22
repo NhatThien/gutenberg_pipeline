@@ -2,23 +2,33 @@ import logging
 import re
 from typing import Optional
 
-import requests
+from aiohttp import ClientSession, ClientError, http_exceptions
+from asyncio import Semaphore
 
 logger = logging.getLogger("__name__")
 
-def parse_book(metadata: dict) -> Optional[str]:
+async def parse_book(semaphore: Semaphore, http_session: ClientSession, metadata: dict)\
+        -> Optional[str]:
     """
     Parse book metadata and return a dictionary.
+    :param semaphore:
+    :param http_session:
     :param metadata: Metadata dictionary.
     :return: Parsed book dictionary.
     """
     if not metadata and not metadata.get("book_link"):
         return None
     try:
-        request = requests.get(metadata["book_link"])
-        request.raise_for_status()
-        return extract_book_content(metadata.get("title"), request.text)
-    except requests.exceptions.RequestException as e:
+        async with semaphore:
+            async with http_session.get(metadata["book_link"]) as response:
+                try:
+                    response.raise_for_status()
+                    text = await response.text()
+                    return extract_book_content(metadata.get("title"), text)
+                except (ClientError, http_exceptions.HttpProcessingError) as e:
+                    logger.error(f"Failed to fetch book {metadata['book_link']} content: {response.status} {e.message}")
+                    return None
+    except Exception as e:
         logger.error(f"Error fetching book content: {e}")
         return None
 
